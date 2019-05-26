@@ -99,10 +99,11 @@ def main(load_flag=False):
     if load_flag:
         clf_model.load_state_dict(torch.load(root_path + '/../modeinfo/trained_model.pt'))
         clf_model.eval()
-        eval_model(clf_model, test_dl)
 
     if torch.cuda.is_available():
         clf_model = clf_model.cuda()
+        if load_flag:
+            eval_model(clf_model, test_dl)
 
     if not load_flag:
         train_model(clf_model, train_dl)

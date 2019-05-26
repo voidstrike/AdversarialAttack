@@ -106,11 +106,11 @@ def fgsm_attack(ann, dl, epsilon):
     for i, (features, labels) in enumerate(dl):
         total += features.shape[0]
         if torch.cuda.is_available():
-            features = Variable(features.view(features.shape[0], -1).cuda(), requires_grad=True)
+            features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28).cuda(), requires_grad=True)
             labels = Variable(labels.cuda())
 
         else:
-            features = Variable(features.view(features.shape[0], -1), requires_grad=True)
+            features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28), requires_grad=True)
             labels = Variable(labels)
 
         features = features.view(-1, 1, 28, 28)
@@ -129,11 +129,11 @@ def fgsm_attack(ann, dl, epsilon):
 
         label_predict_2 = ann(fake_features)
         hit_under_attack += getHitCount(labels, label_predict_2)
-        print('Step'.format(i))
+        print('Step: {}'.format(i))
 
     hit /= instance_count
     hit_under_attack /= instance_count
-    print('Acc before attack: {.6f}, Acc after attack: (.6f)'.format(hit, hit_under_attack))
+    print('Acc before attack: {:.6f}, Acc after attack: (:.6f)'.format(hit, hit_under_attack))
 
 
 def main(load_flag=False):

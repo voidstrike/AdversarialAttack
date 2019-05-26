@@ -44,6 +44,8 @@ def train_model(ann, dl):
                 features = Variable(features.view(features.shape[0], -1))
                 labels = Variable(labels)
 
+            features = features.view(-1, 1, 28, 28)
+
             label_predict = ann(features)
             loss = criterion(label_predict, labels)
 
@@ -72,6 +74,7 @@ def eval_model(ann, dl):
         else:
             features = Variable(features.view(features.shape[0], -1))
             labels = Variable(labels)
+        features = features.view(-1, 1, 28, 28)
 
         label_predict = ann(features)
         loss = criterion(label_predict, labels)
@@ -94,7 +97,11 @@ def main(load_flag=False):
         clf_model.load_state_dict(torch.load(root_path + '/../modeinfo/trained_model.pt'))
         clf_model.eval()
         eval_model(clf_model, test_dl)
-    else:
+
+    if torch.cuda.is_available():
+        clf_model = clf_model.cuda()
+
+    if not load_flag:
         train_model(clf_model, train_dl)
         eval_model(clf_model, test_dl)
     pass

@@ -90,6 +90,52 @@ def eval_model(ann, dl):
           .format(loss_ce_iter, loss_acc_iter))
 
 
+def aux_clip(d, min_value, max_value):
+    idx = d < min_value
+    d[idx] = min_value
+    idx = d > max_value
+    d[idx] = max_value
+    return d
+
+
+def fgsm_attack(ann, dl, epsilon):
+    total = 0
+    hit, hit_under_attack = 0, 0
+    instance_count = dl.dataset.__len__()
+    criterion = nn.CrossEntropyLoss()
+    for i, (features, labels) in enumerate(dl):
+        total += features.shape[0]
+        if torch.cuda.is_available():
+            features = Variable(features.view(features.shape[0], -1).cuda(), requires_grad=True)
+            labels = Variable(labels.cuda())
+
+        else:
+            features = Variable(features.view(features.shape[0], -1), requires_grad=True)
+            labels = Variable(labels)
+
+        features = features.view(-1, 1, 28, 28)
+
+        label_predict = ann(features)
+        hit += getHitCount(labels, label_predict)
+        ann.zero_grad()
+        loss = criterion(label_predict, labels)
+        loss.backward()
+
+        fake_features = aux_clip((features + epsilon * torch.sign(features.grad.data.cpu())), 0, 1)
+        if torch.cuda.is_available():
+            fake_features = Variable(fake_features.cuda())
+        else:
+            fake_features = Variable(fake_features)
+
+        label_predict_2 = ann(fake_features)
+        hit_under_attack += getHitCount(labels, label_predict_2)
+        print('Step'.format(i))
+
+    hit /= instance_count
+    hit_under_attack /= instance_count
+    print('Acc before attack: {.6f}, Acc after attack: (.6f)'.format(hit, hit_under_attack))
+
+
 def main(load_flag=False):
     root_path = os.getcwd()
     clf_model = LeNetAE28()
@@ -108,6 +154,9 @@ def main(load_flag=False):
     if not load_flag:
         train_model(clf_model, train_dl)
         eval_model(clf_model, test_dl)
+
+    print('FGSM Attack Start')
+    fgsm_attack(clf_model, test_dl, epsilon=.06)
     pass
 
 

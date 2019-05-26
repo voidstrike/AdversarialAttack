@@ -29,6 +29,7 @@ def getHitCount(t_label, p_label):
 
 
 def train_model(ann, dl):
+    root_path = os.getcwd()
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.Adam(ann.parameters(), lr=1e-4)
     instance_count = dl.dataset.__len__()
@@ -60,6 +61,8 @@ def train_model(ann, dl):
         loss_acc_iter /= instance_count
         print('Epoch: {}, Cross Entropy Loss: {:.6f}, Classifier Accuracy: {:.6f}'
               .format(step+1, loss_ce_iter, loss_acc_iter))
+
+    torch.save(ann.state_dict(), root_path + '/../modeinfo/trained_model.pt')
 
 
 def eval_model(ann, dl):

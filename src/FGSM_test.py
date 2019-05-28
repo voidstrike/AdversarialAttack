@@ -5,6 +5,7 @@ from torch.autograd.gradcheck import zero_gradients
 from torchvision.datasets import MNIST
 
 import torchvision.transforms as T
+import torch.nn.functional as F
 from PIL import Image
 import matplotlib.pyplot as plt
 from Model import LeNetAE28, IRNet
@@ -12,6 +13,7 @@ from data_loader import get_dl, get_cmnist_dl
 from torch.utils.data import DataLoader
 from loss import ContrastiveLoss
 from auxiliary import copy_conv
+import heapq
 import numpy as np
 import sys
 import os
@@ -117,7 +119,7 @@ def train_siamese(ann, dl):
             optim.step()
 
             total_loss += loss.sum().item()
-        print("Epoch: {}, ContrastiveLoss: {.6f}".format(i+1, total_loss))
+        print("Epoch: {}, ContrastiveLoss: {:.6f}".format(i+1, total_loss))
 
 
 def aux_clip(d, min_value, max_value):
@@ -163,6 +165,81 @@ def fgsm_attack(ann, dl, epsilon):
     print('Acc before attack: {:.6f}, Acc after attack: {:.6f}'.format(hit, hit_under_attack))
 
 
+def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
+    top5, top10 = .0, .0
+    top5_ua, top10_ua = .0, .0
+    criterion = nn.CrossEntropyLoss()
+    instance_count = test_dl.dataset.__len__()
+    for i, (features, labels) in enumerate(test_dl):
+        if torch.cuda.is_available():
+            features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28).cuda(), requires_grad=True)
+            labels = Variable(labels.cuda())
+
+        else:
+            features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28), requires_grad=True)
+            labels = Variable(labels)
+
+        label_predict = f_nn(features)
+        f_nn.zero_grad()
+        loss = criterion(label_predict, labels)
+        loss.backward()
+
+        fake_features = aux_clip((features + epsilon * torch.sign(features.grad.data)), 0, 1)
+        if torch.cuda.is_available():
+            fake_features = Variable(fake_features.cuda())
+        else:
+            fake_features = Variable(fake_features)
+
+        real_ret_list = get_top_list(r_nn, features, src_dl)
+        fake_ret_list = get_top_list(r_nn, fake_features, src_dl)
+        tmp1, tmp2 = get_retrieval_hit(labels.item(), real_ret_list)
+        top5 += tmp1
+        top10 += tmp2
+
+        tmp1, tmp2 = get_retrieval_hit(labels.item(), fake_ret_list)
+        top5_ua += tmp1
+        top10_ua += tmp2
+    top5 /= 5 * instance_count
+    top5_ua /= 5 * instance_count
+    top10 /= 10 * instance_count
+    top10_ua /= 10 * instance_count
+    print("Top5 Accuracy: {:.6f}, Top10 Accuracy: {:.6f}, Top5 Accuracy UA: {:.6f}, Top10 Accuracy UA: {.6F}".format(
+        top5, top10, top5_ua, top10_ua
+    ))
+
+
+def get_top_list(rnn, input_instance, corpus_dl):
+    aux_list = []
+    c_mac = rnn(input_instance)
+    for o_instance, label in corpus_dl:
+        if torch.cuda.is_available():
+            o_instance = Variable(o_instance.view(o_instance.shape[0], -1).cuda())
+            label = Variable(label.cuda())
+        else:
+            o_instance = Variable(o_instance.view(o_instance.shape[0], -1))
+            label = Variable(label)
+
+        dis = F.pairwise_distance(c_mac, rnn(o_instance))
+        if len(aux_list) < 20:
+            heapq.heappush(aux_list, (-dis.item(), label.item()))
+        else:
+            heapq.heappushpop(aux_list, (-dis.item(), label.item()))
+
+    return heapq.nlargest(10, aux_list)
+
+
+def get_retrieval_hit(tgt_label, ret_list):
+    t1, t2 = .0, .0
+    for i in range(10):
+        if tgt_label == ret_list[i]:
+            t1 += 1. if i < 5 else .0
+            t2 += 1.
+    return t1, t2
+
+
+
+
+
 def main(load_flag=False):
     root_path = os.getcwd()
     clf_model = LeNetAE28()
@@ -195,6 +272,10 @@ def main(load_flag=False):
         imgRetrievalNet = imgRetrievalNet.cuda()
 
     train_siamese(imgRetrievalNet, CMNISTLoader)
+
+    print('FGSM Attack -- Retrieval Model')
+    train_dl, test_dl = get_dl('mnist', root_path, True, batch_size=1), get_dl('mnist', root_path, False, batch_size=1)
+    fgsm_attack_retrieval(clf_model, imgRetrievalNet, train_dl, test_dl, .3)
 
     pass
 

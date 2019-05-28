@@ -1,15 +1,16 @@
 from torchvision.datasets import MNIST
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as T
 import numpy as np
 import random
 import torch
+from PIL import Image
 
 
 _TRANS = T.Compose([T.ToTensor()])
 
 
-class ContrativeMNIST(torch.utils.data.dataset):
+class ContrativeMNIST(Dataset):
     def __init__(self, dps, labels, transforms=None):
         self.items = dps
         self.labels = labels
@@ -19,9 +20,10 @@ class ContrativeMNIST(torch.utils.data.dataset):
         return len(self.items)
 
     def __getitem__(self, index):
-        d_tuple, labels = self.dps[index], int(self.labels[index])
+        d_tuple, labels = self.items[index], int(self.labels[index])
+        d_tuple = (Image.fromarray(d_tuple[0].numpy(), mode='L'), Image.fromarray(d_tuple[1].numpy(), mode='L'))
         if self.trans is not None:
-            d_tuple = self.trans(d_tuple)
+            d_tuple = (self.trans(d_tuple[0]), self.trans(d_tuple[1]))
         return d_tuple, labels
 
 
@@ -45,7 +47,7 @@ def get_ds(path, train=True, max_len=1000):
     idx_set = [data_set.train_labels == k for k in range(10)]
     data_by_class = []
     for i in range(10):
-        data_by_class.append(data_set.train_data(idx_set[i]))
+        data_by_class.append(data_set.train_data[idx_set[i]])
 
     new_data = []
     new_label = []

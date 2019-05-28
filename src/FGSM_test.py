@@ -111,8 +111,9 @@ def train_siamese(ann, dl):
         loss = criterion(mac_x, mac_y, labels)
 
         optim.zero_grad()
-        loss.backward()
+        loss.sum().backward()
         optim.step()
+        print(loss.sum().item())
 
 
 def aux_clip(d, min_value, max_value):
@@ -152,7 +153,6 @@ def fgsm_attack(ann, dl, epsilon):
 
         label_predict_2 = ann(fake_features)
         hit_under_attack += getHitCount(labels, label_predict_2)
-        print('Step: {}'.format(i))
 
     hit /= instance_count
     hit_under_attack /= instance_count

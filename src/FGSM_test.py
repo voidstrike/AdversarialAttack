@@ -96,24 +96,28 @@ def eval_model(ann, dl):
 def train_siamese(ann, dl):
     criterion = ContrastiveLoss(margin=.7)
     optim = torch.optim.Adam(ann.parameters(), lr=1e-4)
-    for (features_x, features_y), labels in dl:
-        if torch.cuda.is_available():
-            features_x = Variable(features_x.view(features_x.shape[0], -1).cuda())
-            features_y = Variable(features_y.view(features_y.shape[0], -1).cuda())
-            labels = Variable(labels.cuda())
+    for i in range(10):
+        total_loss = .0
+        for (features_x, features_y), labels in dl:
+            if torch.cuda.is_available():
+                features_x = Variable(features_x.view(features_x.shape[0], -1).cuda())
+                features_y = Variable(features_y.view(features_y.shape[0], -1).cuda())
+                labels = Variable(labels.cuda())
 
-        else:
-            features_x = Variable(features_x.view(features_x.shape[0], -1))
-            features_y = Variable(features_y.view(features_y.shape[0], -1))
-            labels = Variable(labels)
+            else:
+                features_x = Variable(features_x.view(features_x.shape[0], -1))
+                features_y = Variable(features_y.view(features_y.shape[0], -1))
+                labels = Variable(labels)
 
-        mac_x, mac_y = ann((features_x.view(-1, 1, 28, 28), features_y.view(-1, 1, 28, 28)))
-        loss = criterion(mac_x, mac_y, labels)
+            mac_x, mac_y = ann((features_x.view(-1, 1, 28, 28), features_y.view(-1, 1, 28, 28)))
+            loss = criterion(mac_x, mac_y, labels)
 
-        optim.zero_grad()
-        loss.sum().backward()
-        optim.step()
-        print(loss.sum().item())
+            optim.zero_grad()
+            loss.sum().backward()
+            optim.step()
+
+            total_loss += loss.sum().item()
+        print("Epoch: {}, ContrastiveLoss: {.6f}".format(i+1, total_loss))
 
 
 def aux_clip(d, min_value, max_value):

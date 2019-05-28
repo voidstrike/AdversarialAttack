@@ -8,7 +8,7 @@ import torchvision.transforms as T
 from PIL import Image
 import matplotlib.pyplot as plt
 from Model import LeNetAE28, IRNet
-from data_loader import get_dl, get_ds, ContrativeMNIST
+from data_loader import get_dl, get_cmnist_dl
 from torch.utils.data import DataLoader
 from loss import ContrastiveLoss
 from auxiliary import copy_conv
@@ -107,15 +107,12 @@ def train_siamese(ann, dl):
             features_y = Variable(features_y.view(features_y.shape[0], -1))
             labels = Variable(labels)
 
-        mac_x, mac_y = ann((features_x, features_y))
+        mac_x, mac_y = ann((features_x.view(-1, 1, 28, 28), features_y.view(-1, 1, 28, 28)))
         loss = criterion(mac_x, mac_y, labels)
 
         optim.zero_grad()
         loss.backward()
         optim.step()
-
-
-
 
 
 def aux_clip(d, min_value, max_value):
@@ -188,14 +185,13 @@ def main(load_flag=False):
     imgRetrievalNet = IRNet()
     copy_conv(clf_model, imgRetrievalNet)
 
-    raw_data, raw_label = get_ds(root_path, True)
-    CMNISTLoader = DataLoader(ContrativeMNIST(raw_data, raw_label), batch_size=64, shuffle=True)
+    CMNISTLoader = get_cmnist_dl(root_path, True)
 
     if torch.cuda.is_available():
         imgRetrievalNet = imgRetrievalNet.cuda()
 
     train_siamese(imgRetrievalNet, CMNISTLoader)
-    
+
     pass
 
 

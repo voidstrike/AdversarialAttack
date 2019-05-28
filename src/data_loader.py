@@ -10,16 +10,19 @@ _TRANS = T.Compose([T.ToTensor()])
 
 
 class ContrativeMNIST(torch.utils.data.dataset):
-    def __init__(self, dps, labels):
+    def __init__(self, dps, labels, transforms=None):
         self.items = dps
         self.labels = labels
+        self.trans = transforms
 
     def __len__(self):
         return len(self.items)
 
     def __getitem__(self, index):
-        dtuple, labels = self.dps[index], int(self.labels[index])
-        return dtuple, labels
+        d_tuple, labels = self.dps[index], int(self.labels[index])
+        if self.trans is not None:
+            d_tuple = self.trans(d_tuple)
+        return d_tuple, labels
 
 
 def get_dl(ds_name, path, train=True, batch_size=64):
@@ -29,6 +32,12 @@ def get_dl(ds_name, path, train=True, batch_size=64):
         raise Exception("Unsupported Dataset")
 
     return DataLoader(data_set, batch_size=batch_size, shuffle=True)
+
+
+def get_cmnist_dl(path, train=True, batch_size=64):
+    raw_data, raw_label = get_ds(path, train=train)
+    CMNISTLoader = DataLoader(ContrativeMNIST(raw_data, raw_label, transforms=_TRANS), batch_size=batch_size, shuffle=True)
+    return CMNISTLoader
 
 
 def get_ds(path, train=True, max_len=1000):
@@ -46,7 +55,7 @@ def get_ds(path, train=True, max_len=1000):
             new_data.append((data_by_class[c_class][random.randrange(c_len)],
                              data_by_class[c_class][random.randrange(c_len)]))
             new_label.append(1)
-        o_class = list(range(0, c_len)) + list(range(c_len+1, 10))
+        o_class = list(range(0, c_class)) + list(range(c_class+1, 10))
         for _ in range(max_len):
             t_class = random.choice(o_class)
             t_len = len(data_by_class[t_class])

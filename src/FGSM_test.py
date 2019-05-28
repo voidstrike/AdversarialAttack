@@ -7,8 +7,11 @@ from torchvision.datasets import MNIST
 import torchvision.transforms as T
 from PIL import Image
 import matplotlib.pyplot as plt
-from Model import LeNetAE28
-from data_loader import get_dl
+from Model import LeNetAE28, IRNet
+from data_loader import get_dl, get_ds, ContrativeMNIST
+from torch.utils.data import DataLoader
+from loss import ContrastiveLoss
+from auxiliary import copy_conv
 import numpy as np
 import sys
 import os
@@ -90,6 +93,31 @@ def eval_model(ann, dl):
           .format(loss_ce_iter, loss_acc_iter))
 
 
+def train_siamese(ann, dl):
+    criterion = ContrastiveLoss(margin=.7)
+    optim = torch.optim.Adam(ann.parameters(), lr=1e-4)
+    for (features_x, features_y), labels in dl:
+        if torch.cuda.is_available():
+            features_x = Variable(features_x.view(features_x.shape[0], -1).cuda())
+            features_y = Variable(features_y.view(features_y.shape[0], -1).cuda())
+            labels = Variable(labels.cuda())
+
+        else:
+            features_x = Variable(features_x.view(features_x.shape[0], -1))
+            features_y = Variable(features_y.view(features_y.shape[0], -1))
+            labels = Variable(labels)
+
+        mac_x, mac_y = ann((features_x, features_y))
+        loss = criterion(mac_x, mac_y, labels)
+
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+
+
+
+
+
 def aux_clip(d, min_value, max_value):
     idx = d < min_value
     d[idx] = min_value
@@ -113,15 +141,13 @@ def fgsm_attack(ann, dl, epsilon):
             features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28), requires_grad=True)
             labels = Variable(labels)
 
-        features = features.view(-1, 1, 28, 28)
-
         label_predict = ann(features)
         hit += getHitCount(labels, label_predict)
         ann.zero_grad()
         loss = criterion(label_predict, labels)
         loss.backward()
 
-        fake_features = aux_clip((features + epsilon * torch.sign(features.grad.data.cpu())), 0, 1)
+        fake_features = aux_clip((features + epsilon * torch.sign(features.grad.data)), 0, 1)
         if torch.cuda.is_available():
             fake_features = Variable(fake_features.cuda())
         else:
@@ -133,7 +159,7 @@ def fgsm_attack(ann, dl, epsilon):
 
     hit /= instance_count
     hit_under_attack /= instance_count
-    print('Acc before attack: {:.6f}, Acc after attack: (:.6f)'.format(hit, hit_under_attack))
+    print('Acc before attack: {:.6f}, Acc after attack: {:.6f}'.format(hit, hit_under_attack))
 
 
 def main(load_flag=False):
@@ -157,6 +183,19 @@ def main(load_flag=False):
 
     print('FGSM Attack Start')
     fgsm_attack(clf_model, test_dl, epsilon=.06)
+
+    print("Fine tuning the network via siamese architecture")
+    imgRetrievalNet = IRNet()
+    copy_conv(clf_model, imgRetrievalNet)
+
+    raw_data, raw_label = get_ds(root_path, True)
+    CMNISTLoader = DataLoader(ContrativeMNIST(raw_data, raw_label), batch_size=64, shuffle=True)
+
+    if torch.cuda.is_available():
+        imgRetrievalNet = imgRetrievalNet.cuda()
+
+    train_siamese(imgRetrievalNet, CMNISTLoader)
+    
     pass
 
 

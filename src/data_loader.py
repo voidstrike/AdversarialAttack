@@ -8,7 +8,7 @@ from PIL import Image
 
 
 _TRANS = T.Compose([T.ToTensor()])
-_TRANS_NORM = T.Compose([T.ToTensor, T.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
+_TRANS_NORM = T.Compose([T.ToTensor(), T.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
 
 
 class ContrativeMNIST(Dataset):
@@ -39,7 +39,7 @@ class ContrastiveCIFAR(Dataset):
 
     def __getitem__(self, index):
         d_tuple, labels = self.items[index], int(self.labels[index])
-        d_tuple = (Image.fromarray(d_tuple[0].numpy()), Image.fromarray(d_tuple[1].numpy()))
+        d_tuple = (Image.fromarray(d_tuple[0]), Image.fromarray(d_tuple[1]))
         if self.trans is not None:
             d_tuple = (self.trans(d_tuple[0]), self.trans(d_tuple[1]))
         return d_tuple, labels
@@ -76,7 +76,7 @@ def get_cmnist_dl(path, train=True, batch_size=64):
 
 
 def get_ccifar_dl(path, train=True, batch_size=64):
-    raw_data, raw_label = get_ds(path, train=train)
+    raw_data, raw_label = get_ds(path, dname='cifar', train=train)
     CCIFARLoader = DataLoader(ContrastiveCIFAR(raw_data, raw_label, transforms=_TRANS_NORM), batch_size=batch_size, shuffle=True)
     return CCIFARLoader
 
@@ -84,12 +84,15 @@ def get_ccifar_dl(path, train=True, batch_size=64):
 def get_ds(path, dname='mnist', train=True, max_len=1000):
     if dname == 'mnist':
         data_set = MNIST(path + '/../data/mnist',  train=train, transform=_TRANS, download=True)
+        idx_set = [data_set.train_labels == k for k in range(10)]
     elif dname == 'cifar':
         data_set = CIFAR10(path + '/../data/cifar10', train=train, transform=_TRANS_NORM, download=True)
+        idx_set = [[] for _ in range(10)]
+        for i, label in enumerate(data_set.train_labels):
+            idx_set[label].append(i)
     else:
         raise Exception('Unsupported Dataset')
 
-    idx_set = [data_set.train_labels == k for k in range(10)]
     data_by_class = []
     for i in range(10):
         data_by_class.append(data_set.train_data[idx_set[i]])

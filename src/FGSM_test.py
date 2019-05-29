@@ -8,7 +8,7 @@ import torchvision.transforms as T
 import torch.nn.functional as F
 from PIL import Image
 import matplotlib.pyplot as plt
-from Model import LeNetAE28, IRNet
+from Model import LeNetAE28, IRNet, CUDNN
 from data_loader import get_dl, get_ccifar_dl, get_dl_w_sampler
 from torch.utils.data import DataLoader
 from loss import ContrastiveLoss
@@ -202,8 +202,8 @@ def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
         else:
             fake_features = Variable(fake_features)
 
-        real_ret_list = get_top_list(r_nn, features, src_dl)
-        fake_ret_list = get_top_list(r_nn, fake_features, src_dl)
+        real_ret_list = get_top_list_hc(r_nn, features, src_dl)
+        fake_ret_list = get_top_list_hc(r_nn, fake_features, src_dl)
         tmp1, tmp2 = get_retrieval_hit(labels.item(), real_ret_list)
         top5 += tmp1
         top10 += tmp2
@@ -223,6 +223,7 @@ def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
 
 
 def get_feature_data_set(ann, dl):
+    global _IMG_CHANNEL, _IMG_SIZE
     res_data = []
     res_label = []
     for f, l in dl:
@@ -233,7 +234,7 @@ def get_feature_data_set(ann, dl):
             f = Variable(f.view(f.shape[0], -1))
             l = Variable(l)
 
-        res = ann(f.view(-1, 1, 28, 28))
+        res = ann(f.view(-1, _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE))
         res_data.append(res)
         res_label.append(l)
     return res_data, res_label
@@ -256,6 +257,28 @@ def get_top_list(rnn, input_instance, corpus_dl):
     return heapq.nlargest(10, aux_list)
 
 
+def get_top_list_hc(rnn, input_instance, corpus_dl):
+    global _IMG_CHANNEL, _IMG_SIZE
+    aux_list = []
+    c_mac = rnn(input_instance)
+    for o_instance, label in corpus_dl:
+        if torch.cuda.is_available():
+            o_instance = Variable(o_instance.view(o_instance.shape[0], -1).cuda())
+            label = Variable(label.cuda())
+        else:
+            o_instance = Variable(o_instance.view(o_instance.shape[0], -1))
+            label = Variable(label)
+
+        dis = F.pairwise_distance(c_mac, rnn(o_instance.view(-1, _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE)))
+
+        if len(aux_list) < 20:
+            heapq.heappush(aux_list, (-dis.item(), label.item()))
+        else:
+            heapq.heappushpop(aux_list, (-dis.item(), label.item()))
+
+    return heapq.nlargest(10, aux_list)
+
+
 def get_retrieval_hit(tgt_label, ret_list):
     t1, t2 = .0, .0
     for i in range(10):
@@ -268,7 +291,8 @@ def get_retrieval_hit(tgt_label, ret_list):
 
 def main(load_flag=False):
     root_path = os.getcwd()
-    clf_model = LeNetAE28()
+    # clf_model = LeNetAE28()
+    clf_model = CUDNN()
 
     # train_dl, test_dl = get_dl('mnist', root_path, True), get_dl('mnist', root_path, False)
     train_dl, test_dl = get_dl('cifar', root_path, True), get_dl('cifar', root_path, False)
@@ -290,7 +314,8 @@ def main(load_flag=False):
     fgsm_attack(clf_model, test_dl, epsilon=.3)
 
     print("Fine tuning the network via siamese architecture")
-    imgRetrievalNet = IRNet()
+    imgRetrievalNet = IRNet(num_mac=1, inter_dim=128)
+    # imgRetrievalNet = IRNet()
     copy_conv(clf_model, imgRetrievalNet)
 
     # CMNISTLoader = get_cmnist_dl(root_path, True)
@@ -298,7 +323,8 @@ def main(load_flag=False):
 
     if torch.cuda.is_available():
         imgRetrievalNet = imgRetrievalNet.cuda()
-
+    
+    # train_siamese(imgRetrievalNet, CMNISTLoader)
     train_siamese(imgRetrievalNet, CCIFARLoader)
 
     print('FGSM Attack -- Retrieval Model')

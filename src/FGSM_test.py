@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from PIL import Image
 import matplotlib.pyplot as plt
 from Model import LeNetAE28, IRNet
-from data_loader import get_dl, get_cmnist_dl, get_dl_w_sampler
+from data_loader import get_dl, get_ccifar_dl, get_dl_w_sampler
 from torch.utils.data import DataLoader
 from loss import ContrastiveLoss
 from auxiliary import copy_conv
@@ -208,7 +208,7 @@ def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
     top5_ua /= 5 * instance_count
     top10 /= 10 * instance_count
     top10_ua /= 10 * instance_count
-    print("Top5 Accuracy: {:.6f}, Top10 Accuracy: {:.6f}, Top5 Accuracy UA: {:.6f}, Top10 Accuracy UA: {.6F}".format(
+    print("Top5 Accuracy: {:.6f}, Top10 Accuracy: {:.6f}, Top5 Accuracy UA: {:.6f}, Top10 Accuracy UA: {:.6F}".format(
         top5, top10, top5_ua, top10_ua
     ))
 
@@ -261,7 +261,8 @@ def main(load_flag=False):
     root_path = os.getcwd()
     clf_model = LeNetAE28()
 
-    train_dl, test_dl = get_dl('mnist', root_path, True), get_dl('mnist', root_path, False)
+    # train_dl, test_dl = get_dl('mnist', root_path, True), get_dl('mnist', root_path, False)
+    train_dl, test_dl = get_dl('cifar', root_path, True), get_dl('cifar', root_path, False)
 
     if load_flag:
         clf_model.load_state_dict(torch.load(root_path + '/../modeinfo/trained_model.pt'))
@@ -277,21 +278,22 @@ def main(load_flag=False):
         eval_model(clf_model, test_dl)
 
     print('FGSM Attack Start')
-    fgsm_attack(clf_model, test_dl, epsilon=.06)
+    fgsm_attack(clf_model, test_dl, epsilon=.3)
 
     print("Fine tuning the network via siamese architecture")
     imgRetrievalNet = IRNet()
     copy_conv(clf_model, imgRetrievalNet)
 
-    CMNISTLoader = get_cmnist_dl(root_path, True)
+    # CMNISTLoader = get_cmnist_dl(root_path, True)
+    CCIFARLoader = get_ccifar_dl(root_path, True)
 
     if torch.cuda.is_available():
         imgRetrievalNet = imgRetrievalNet.cuda()
 
-    train_siamese(imgRetrievalNet, CMNISTLoader)
+    train_siamese(imgRetrievalNet, CCIFARLoader)
 
     print('FGSM Attack -- Retrieval Model')
-    train_dl, test_dl = get_dl('mnist', root_path, True, batch_size=1), get_dl_w_sampler('mnist', root_path, False, batch_size=1)
+    train_dl, test_dl = get_dl('cifar', root_path, True, batch_size=1), get_dl_w_sampler('cifar', root_path, False, batch_size=1)
     fgsm_attack_retrieval(clf_model, imgRetrievalNet, train_dl, test_dl, .3)
 
     pass

@@ -1,4 +1,4 @@
-from torchvision.datasets import MNIST
+from torchvision.datasets import MNIST, CIFAR10
 from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 import torchvision.transforms as T
 import numpy as np
@@ -8,6 +8,7 @@ from PIL import Image
 
 
 _TRANS = T.Compose([T.ToTensor()])
+_TRANS_NORM = T.Compose([T.ToTensor, T.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
 
 
 class ContrativeMNIST(Dataset):
@@ -27,9 +28,28 @@ class ContrativeMNIST(Dataset):
         return d_tuple, labels
 
 
+class ContrastiveCIFAR(Dataset):
+    def __init__(self, dps, labels, transforms=None):
+        self.items = dps
+        self.labels = labels
+        self.trans = transforms
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, index):
+        d_tuple, labels = self.items[index], int(self.labels[index])
+        d_tuple = (Image.fromarray(d_tuple[0].numpy()), Image.fromarray(d_tuple[1].numpy()))
+        if self.trans is not None:
+            d_tuple = (self.trans(d_tuple[0]), self.trans(d_tuple[1]))
+        return d_tuple, labels
+
+
 def get_dl(ds_name, path, train=True, batch_size=64):
     if ds_name == "mnist":
         data_set = MNIST(path + '/../data/mnist',  train=train, transform=_TRANS, download=True)
+    elif ds_name == 'cifar':
+        data_set = CIFAR10(path + '/../data/cifar10', train=train, transform=_TRANS_NORM, download=True)
     else:
         raise Exception("Unsupported Dataset")
 
@@ -39,6 +59,8 @@ def get_dl(ds_name, path, train=True, batch_size=64):
 def get_dl_w_sampler(ds_name, path, train=True, batch_size=64, sample_size=1000):
     if ds_name == 'mnist':
         data_set = MNIST(path + '/../data/mnist', train=train, transform=_TRANS, download=True)
+    elif ds_name == 'cifar':
+        data_set = CIFAR10(path + '/../data/cifar10', train=train, transform=_TRANS_NORM, download=True)
     else:
         raise Exception("Unsupported Dataset")
 
@@ -53,8 +75,20 @@ def get_cmnist_dl(path, train=True, batch_size=64):
     return CMNISTLoader
 
 
-def get_ds(path, train=True, max_len=1000):
-    data_set = MNIST(path + '/../data/mnist',  train=train, transform=_TRANS, download=True)
+def get_ccifar_dl(path, train=True, batch_size=64):
+    raw_data, raw_label = get_ds(path, train=train)
+    CCIFARLoader = DataLoader(ContrastiveCIFAR(raw_data, raw_label, transforms=_TRANS_NORM), batch_size=batch_size, shuffle=True)
+    return CCIFARLoader
+
+
+def get_ds(path, dname='mnist', train=True, max_len=1000):
+    if dname == 'mnist':
+        data_set = MNIST(path + '/../data/mnist',  train=train, transform=_TRANS, download=True)
+    elif dname == 'cifar':
+        data_set = CIFAR10(path + '/../data/cifar10', train=train, transform=_TRANS_NORM, download=True)
+    else:
+        raise Exception('Unsupported Dataset')
+
     idx_set = [data_set.train_labels == k for k in range(10)]
     data_by_class = []
     for i in range(10):

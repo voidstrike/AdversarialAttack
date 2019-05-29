@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from PIL import Image
 import matplotlib.pyplot as plt
 from Model import LeNetAE28, IRNet
-from data_loader import get_dl, get_cmnist_dl
+from data_loader import get_dl, get_cmnist_dl, get_dl_w_sampler
 from torch.utils.data import DataLoader
 from loss import ContrastiveLoss
 from auxiliary import copy_conv
@@ -100,7 +100,7 @@ def eval_model(ann, dl):
 def train_siamese(ann, dl):
     criterion = ContrastiveLoss(margin=.7)
     optim = torch.optim.Adam(ann.parameters(), lr=1e-4)
-    for i in range(10):
+    for i in range(50):
         total_loss = .0
         for (features_x, features_y), labels in dl:
             if torch.cuda.is_available():
@@ -172,6 +172,7 @@ def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
     top5_ua, top10_ua = .0, .0
     criterion = nn.CrossEntropyLoss()
     instance_count = test_dl.dataset.__len__()
+    print('Number of instance need to be examed : {}'.format(instance_count))
     for i, (features, labels) in enumerate(test_dl):
         if torch.cuda.is_available():
             features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28).cuda(), requires_grad=True)
@@ -197,10 +198,12 @@ def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
         tmp1, tmp2 = get_retrieval_hit(labels.item(), real_ret_list)
         top5 += tmp1
         top10 += tmp2
+        print('Instance: {}, Top5 Acc: {:.6f}, Top10 Acc: {:.6f}'.format(i, tmp1, tmp2))
 
         tmp1, tmp2 = get_retrieval_hit(labels.item(), fake_ret_list)
         top5_ua += tmp1
         top10_ua += tmp2
+        print('Instance:{}, Top5_UA Acc: {:.6f}, Top10_UA Acc: {:.6f}'.format(i, tmp1, tmp2))
     top5 /= 5 * instance_count
     top5_ua /= 5 * instance_count
     top10 /= 10 * instance_count
@@ -233,22 +236,21 @@ def get_top_list(rnn, input_instance, corpus_dl):
     global _GLOBAL_AUX_FEATURE, _GLOBAL_AUX_LABEL
     if _GLOBAL_AUX_FEATURE is None:
         _GLOBAL_AUX_FEATURE, _GLOBAL_AUX_LABEL = get_feature_data_set(rnn, corpus_dl)
-    else:
-        for i in range(len(_GLOBAL_AUX_FEATURE)):
-            f, l = _GLOBAL_AUX_FEATURE[i], _GLOBAL_AUX_LABEL[i]
-            dis = F.pairwise_distance(c_mac, f)
+    for i in range(len(_GLOBAL_AUX_FEATURE)):
+        f, l = _GLOBAL_AUX_FEATURE[i], _GLOBAL_AUX_LABEL[i]
+        dis = F.pairwise_distance(c_mac, f)
 
-            if len(aux_list) < 20:
-                heapq.heappush(aux_list, (-dis.item(), l.item()))
-            else:
-                heapq.heappushpop(aux_list, (-dis.item(), l.item()))
+        if len(aux_list) < 20:
+            heapq.heappush(aux_list, (-dis.item(), l.item()))
+        else:
+            heapq.heappushpop(aux_list, (-dis.item(), l.item()))
     return heapq.nlargest(10, aux_list)
 
 
 def get_retrieval_hit(tgt_label, ret_list):
     t1, t2 = .0, .0
     for i in range(10):
-        if tgt_label == ret_list[i]:
+        if tgt_label == ret_list[i][1]:
             t1 += 1. if i < 5 else .0
             t2 += 1.
     return t1, t2
@@ -289,7 +291,7 @@ def main(load_flag=False):
     train_siamese(imgRetrievalNet, CMNISTLoader)
 
     print('FGSM Attack -- Retrieval Model')
-    train_dl, test_dl = get_dl('mnist', root_path, True, batch_size=1), get_dl('mnist', root_path, False, batch_size=1)
+    train_dl, test_dl = get_dl('mnist', root_path, True, batch_size=1), get_dl_w_sampler('mnist', root_path, False, batch_size=1)
     fgsm_attack_retrieval(clf_model, imgRetrievalNet, train_dl, test_dl, .3)
 
     pass

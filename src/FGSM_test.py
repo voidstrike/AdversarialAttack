@@ -23,6 +23,9 @@ reverse_trans = lambda x: np.asarray(T.ToPILImage()(x))
 _GLOBAL_AUX_FEATURE = None
 _GLOBAL_AUX_LABEL = None
 
+_IMG_CHANNEL = 3
+_IMG_SIZE = 32
+
 eps = 2 * 8 / 225
 steps = 40
 norm = float('inf')
@@ -36,6 +39,7 @@ def getHitCount(t_label, p_label):
 
 
 def train_model(ann, dl):
+    global _IMG_CHANNEL, _IMG_SIZE
     root_path = os.getcwd()
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.Adam(ann.parameters(), lr=1e-4)
@@ -52,7 +56,7 @@ def train_model(ann, dl):
                 features = Variable(features.view(features.shape[0], -1))
                 labels = Variable(labels)
 
-            features = features.view(-1, 1, 28, 28)
+            features = features.view(-1, _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE)
 
             label_predict = ann(features)
             loss = criterion(label_predict, labels)
@@ -73,6 +77,7 @@ def train_model(ann, dl):
 
 
 def eval_model(ann, dl):
+    global _IMG_CHANNEL, _IMG_SIZE
     criterion = nn.CrossEntropyLoss()
     instance_count = dl.dataset.__len__()
     loss_ce_iter, loss_acc_iter = .0, .0
@@ -84,7 +89,7 @@ def eval_model(ann, dl):
         else:
             features = Variable(features.view(features.shape[0], -1))
             labels = Variable(labels)
-        features = features.view(-1, 1, 28, 28)
+        features = features.view(-1, _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE)
 
         label_predict = ann(features)
         loss = criterion(label_predict, labels)
@@ -98,6 +103,7 @@ def eval_model(ann, dl):
 
 
 def train_siamese(ann, dl):
+    global _IMG_CHANNEL, _IMG_SIZE
     criterion = ContrastiveLoss(margin=.7)
     optim = torch.optim.Adam(ann.parameters(), lr=1e-4)
     for i in range(50):
@@ -113,7 +119,8 @@ def train_siamese(ann, dl):
                 features_y = Variable(features_y.view(features_y.shape[0], -1))
                 labels = Variable(labels)
 
-            mac_x, mac_y = ann((features_x.view(-1, 1, 28, 28), features_y.view(-1, 1, 28, 28)))
+            mac_x, mac_y = ann((features_x.view(-1, _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE),
+                                features_y.view(-1, _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE)))
             loss = criterion(mac_x, mac_y, labels)
 
             optim.zero_grad()
@@ -133,6 +140,7 @@ def aux_clip(d, min_value, max_value):
 
 
 def fgsm_attack(ann, dl, epsilon):
+    global _IMG_CHANNEL, _IMG_SIZE
     total = 0
     hit, hit_under_attack = 0, 0
     instance_count = dl.dataset.__len__()
@@ -140,11 +148,11 @@ def fgsm_attack(ann, dl, epsilon):
     for i, (features, labels) in enumerate(dl):
         total += features.shape[0]
         if torch.cuda.is_available():
-            features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28).cuda(), requires_grad=True)
+            features = Variable(features.view(features.shape[0], _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE).cuda(), requires_grad=True)
             labels = Variable(labels.cuda())
 
         else:
-            features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28), requires_grad=True)
+            features = Variable(features.view(features.shape[0], _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE), requires_grad=True)
             labels = Variable(labels)
 
         label_predict = ann(features)
@@ -168,6 +176,7 @@ def fgsm_attack(ann, dl, epsilon):
 
 
 def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
+    global _IMG_CHANNEL, _IMG_SIZE
     top5, top10 = .0, .0
     top5_ua, top10_ua = .0, .0
     criterion = nn.CrossEntropyLoss()
@@ -175,11 +184,11 @@ def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
     print('Number of instance need to be examed : {}'.format(instance_count))
     for i, (features, labels) in enumerate(test_dl):
         if torch.cuda.is_available():
-            features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28).cuda(), requires_grad=True)
+            features = Variable(features.view(features.shape[0], _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE).cuda(), requires_grad=True)
             labels = Variable(labels.cuda())
 
         else:
-            features = Variable(features.view(features.shape[0], -1).view(-1, 1, 28, 28), requires_grad=True)
+            features = Variable(features.view(features.shape[0], _IMG_CHANNEL, _IMG_SIZE, _IMG_SIZE), requires_grad=True)
             labels = Variable(labels)
 
         label_predict = f_nn(features)

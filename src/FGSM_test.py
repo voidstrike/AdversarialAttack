@@ -20,6 +20,8 @@ import os
 
 trans = T.Compose([T.ToTensor()])
 reverse_trans = lambda x: np.asarray(T.ToPILImage()(x))
+_GLOBAL_AUX_FEATURE = None
+_GLOBAL_AUX_LABEL = None
 
 eps = 2 * 8 / 225
 steps = 40
@@ -208,23 +210,38 @@ def fgsm_attack_retrieval(f_nn, r_nn, src_dl, test_dl, epsilon):
     ))
 
 
+def get_feature_data_set(ann, dl):
+    res_data = []
+    res_label = []
+    for f, l in dl:
+        if torch.cuda.is_available():
+            f = Variable(f.view(f.shape[0], -1).cuda())
+            l = Variable(l.cuda())
+        else:
+            f = Variable(f.view(f.shape[0], -1))
+            l = Variable(l)
+
+        res = ann(f.view(-1, 1, 28, 28))
+        res_data.append(res)
+        res_label.append(l)
+    return res_data, res_label
+
+
 def get_top_list(rnn, input_instance, corpus_dl):
     aux_list = []
     c_mac = rnn(input_instance)
-    for o_instance, label in corpus_dl:
-        if torch.cuda.is_available():
-            o_instance = Variable(o_instance.view(o_instance.shape[0], -1).cuda())
-            label = Variable(label.cuda())
-        else:
-            o_instance = Variable(o_instance.view(o_instance.shape[0], -1))
-            label = Variable(label)
+    global _GLOBAL_AUX_FEATURE, _GLOBAL_AUX_LABEL
+    if _GLOBAL_AUX_FEATURE is None:
+        _GLOBAL_AUX_FEATURE, _GLOBAL_AUX_LABEL = get_feature_data_set(rnn, corpus_dl)
+    else:
+        for i in range(len(_GLOBAL_AUX_FEATURE)):
+            f, l = _GLOBAL_AUX_FEATURE[i], _GLOBAL_AUX_LABEL[i]
+            dis = F.pairwise_distance(c_mac, f)
 
-        dis = F.pairwise_distance(c_mac, rnn(o_instance))
-        if len(aux_list) < 20:
-            heapq.heappush(aux_list, (-dis.item(), label.item()))
-        else:
-            heapq.heappushpop(aux_list, (-dis.item(), label.item()))
-
+            if len(aux_list) < 20:
+                heapq.heappush(aux_list, (-dis.item(), l.item()))
+            else:
+                heapq.heappushpop(aux_list, (-dis.item(), l.item()))
     return heapq.nlargest(10, aux_list)
 
 
@@ -235,8 +252,6 @@ def get_retrieval_hit(tgt_label, ret_list):
             t1 += 1. if i < 5 else .0
             t2 += 1.
     return t1, t2
-
-
 
 
 
